@@ -7,6 +7,14 @@ edition = "2021"
 name = "arp"
 crate-type = ["rlib"]
 
+[features]
+default = ["arptool"]
+arptool = ["clap"]
+
+[[bin]]
+name = "arptool"
+
 [dependencies]
+clap = { version = "4.5.30", optional = true, features = ["derive"] }
 miniz_oxide = "0.8.4"
 uuid = { version = "1.14.0", features = ["v4"] }
