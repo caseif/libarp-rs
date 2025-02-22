@@ -1,0 +1,12 @@
+[package]
+name = "arp"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+name = "arp"
+crate-type = ["rlib"]
+
+[dependencies]
+miniz_oxide = "0.8.4"
+uuid = { version = "1.14.0", features = ["v4"] }
