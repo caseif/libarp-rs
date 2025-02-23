@@ -86,7 +86,7 @@ pub fn create_arp_from_fs(
     } else {
         Default::default()
     };
-    
+
     let mut all_media_types = media_types_builtin;
     all_media_types.extend(media_types_user);
 
@@ -441,13 +441,19 @@ fn write_package_to_disk(
     // release part 1 file handle
     _ = part_1_file;
 
+    let target_dir_ref = target_dir.as_ref();
+
+    if !target_dir_ref.exists() {
+        fs::create_dir(target_dir_ref).map_err(|e| e.to_string())?;
+    }
+
     // copy temp files to final paths
     for i in 0..total_parts {
         let src = &part_paths[i as usize];
         let dest = if i == 0 && total_parts == 1 {
-            target_dir.as_ref().join(format!("{}.arp", options.name))
+            target_dir_ref.join(format!("{}.arp", options.name))
         } else {
-            target_dir.as_ref().join(format!("{}.part{:0>3}.arp", options.name, i + 1))
+            target_dir_ref.join(format!("{}.part{:0>3}.arp", options.name, i + 1))
         };
         fs::copy(src, dest).map_err(|e| e.to_string())?;
         fs::remove_file(src).map_err(|e| e.to_string())?;
