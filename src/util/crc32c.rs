@@ -1,5 +1,6 @@
+#[allow(unused)]
+use std::arch;
 
-use std::arch::x86_64::{_mm_crc32_u64, _mm_crc32_u8};
 const CRC_POLY_REV: u32 = 0x82F63B78;
 const INITIAL_INV: u32 = 0;
 
@@ -39,13 +40,14 @@ fn crc32c_sw(initial: u32, buf: &[u8]) -> u32 {
     crc_final
 }
 
+#[cfg(target_arch = "x86_64")]
 fn crc32c_x86_64_sse42(initial: u32, buf: &[u8]) -> u32 {
     const DATA_BLOCK_LEN: usize = 8;
 
     let mut crc: u32 = initial;
     for i in 0..(buf.len() / DATA_BLOCK_LEN) {
         unsafe {
-            crc = _mm_crc32_u64(
+            crc = arch::x86_64::_mm_crc32_u64(
                 crc as u64,
                 *(buf[(i * 8)..((i + 1) * 8)].as_ptr() as *const u64)
             ) as u32;
@@ -53,7 +55,7 @@ fn crc32c_x86_64_sse42(initial: u32, buf: &[u8]) -> u32 {
     }
     for i in 0..(buf.len() % DATA_BLOCK_LEN) {
         unsafe {
-            crc = _mm_crc32_u8(crc, buf[buf.len() - (buf.len() % 8) + i]);
+            crc = arch::x86_64::_mm_crc32_u8(crc, buf[buf.len() - (buf.len() % 8) + i]);
         }
     }
 
