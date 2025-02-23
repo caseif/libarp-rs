@@ -4,27 +4,20 @@ ARP is a binary format for packing resource files in a structured manner. libarp
 pack/unpack functionality for the format.
 
 This repository contains a Rust rewrite of the original [libarp](https://github.com/caseif/libarp) library which is
-written in C.
+written in C. Additionally, a Rust rewrite of [arptool](https://github.com/caseif/arptool) is included in this crate as
+well.
 
-ARP's full specification can be found in the [SPEC.md](doc/SPEC.md) file in this repository.
+ARP's full specification can be found in the [SPEC.md](https://github.com/caseif/libarp/doc/SPEC.md) file in the
+original libarp repository.
 
 ## Compiling
 
-libarp depends on [zlib](https://www.zlib.net/) for DEFLATE (de)compression support. This library is provided as a Git
-submodule within this repository and will be automatically built alongside the root project.
-
-To build:
-
-```bash
-mkdir build
-cd build
-cmake ..
-cmake --build .
-```
+To compile libarp, simply run `cargo build`. By default, the `arptool` CLI will also be built and can be disabled via
+the `arptool` feature flag.
 
 ## License
 
-libarp is made available under the [MIT License](https://opensource.org/licenses/MIT). You may use, modify, and
+libarp and arptool are made available under the [MIT License](https://opensource.org/licenses/MIT). You may use, modify, and
 distribute the project within its terms.
 
 The ARP specification is made available under the
