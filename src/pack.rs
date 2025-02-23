@@ -473,7 +473,7 @@ fn load_node_data(node: &FsNode, options: &PackingOptions)
         if let Some(compression) = options.compression_type.as_ref() {
             match compression.as_str() {
                 COMPRESS_MAGIC_DEFLATE =>
-                    deflate::compress_to_vec(&data, CompressionLevel::BestCompression as u8),
+                    deflate::compress_to_vec_zlib(&data, CompressionLevel::NoCompression as u8),
                 _ => panic!("Unhandled compression type {}", compression),
             }
         } else {
