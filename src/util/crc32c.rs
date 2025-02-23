@@ -16,17 +16,19 @@ pub fn crc32c(buf: &[u8]) -> u32 {
 
 #[cfg(target_arch = "x86_64")]
 pub fn crc32c_continue(initial: u32, buf: &[u8]) -> u32 {
+    let real_initial = !initial;
     if is_x86_feature_detected!("sse4.2") {
-        crc32c_x86_64_sse42(initial, buf)
+        crc32c_x86_64_sse42(real_initial, buf)
     } else {
         // SSE4.2 not supported, fall back to software implementation
-        crc32c_sw(initial, buf)
+        crc32c_sw(real_initial, buf)
     }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
 pub fn crc32c_continue(initial: u32, buf: &[u8]) -> u32 {
-    crc32c_sw(initial, buf)
+    let real_iniital = !initial;
+    crc32c_sw(real_iniital, buf)
 }
 
 fn crc32c_sw(initial: u32, buf: &[u8]) -> u32 {
@@ -35,7 +37,7 @@ fn crc32c_sw(initial: u32, buf: &[u8]) -> u32 {
         let lookup_index = ((crc & BIT_MASK_8 as u32) as u8 ^ buf[i]) as usize;
         crc = (crc >> BITS_PER_BYTE) ^ LOOKUP_TABLE[lookup_index];
     }
-    
+
     let crc_final = !crc;
     crc_final
 }
