@@ -1,0 +1,40 @@
+name: Argus
+on: [push, pull_request]
+jobs:
+  Build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025, macos-13, macos-14, macos-15]
+        profile: [dev, release]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Set env vars for current matrix configuration
+        shell: pwsh
+        run: |
+          $os_name = "${{ runner.os }}".ToLower()
+          echo "OS_NAME=$os_name" >> "$env:GITHUB_ENV"
+
+          $runner_name = "${{ matrix.os }}".Replace("-", "").Replace(".", "").ToLower()
+          echo "RUNNER_NAME=$runner_name" >> "$env:GITHUB_ENV"
+
+          $profile_name = "${{ matrix.profile }}".ToLower()
+          $config_name = if ($profile_name -eq "dev") { "debug" } else { "release" }
+          echo "CONFIG_NAME=$config_name" >> "$env:GITHUB_ENV"
+
+          $exe_ext = if ($os_name -eq "windows") { ".exe" } else { "" }
+          echo "EXE_EXT=$exe_ext" >> "$env:GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build
+        run: cargo build --profile ${{ matrix.profile }}
+
+      - name: Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: arptool-${{ env.RUNNER_NAME }}-${{ env.CONFIG_NAME }}
+          path: target/${{ env.CONFIG_NAME }}/arptool${{ env.EXE_EXT }}
