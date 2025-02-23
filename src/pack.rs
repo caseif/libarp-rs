@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use miniz_oxide::deflate;
 use miniz_oxide::deflate::CompressionLevel;
 use uuid::Uuid;
+use crate::CompressionType;
 use crate::defines::*;
 use crate::util::crc32c::crc32c;
 use crate::util::uid::validate_path_component;
@@ -20,7 +21,7 @@ pub struct PackingOptions {
     name: String,
     namespace: String,
     max_part_len: Option<u64>,
-    compression_type: Option<String>,
+    compression_type: Option<CompressionType>,
     media_types_path: Option<PathBuf>,
 }
 
@@ -29,12 +30,11 @@ impl PackingOptions {
         name: impl Into<String>,
         namespace: impl Into<String>,
         max_part_len: Option<u64>,
-        compression_type: Option<impl Into<String>>,
+        compression_type: Option<CompressionType>,
         media_types_path: Option<impl AsRef<Path>>,
     ) -> Result<PackingOptions, String> {
         let name = name.into();
         let namespace = namespace.into();
-        let compression_type = compression_type.map(|s| s.into());
         let media_types_path = media_types_path.map(|p| p.as_ref().to_path_buf());
 
         if name.is_empty() {
@@ -53,19 +53,12 @@ impl PackingOptions {
             return Err("Max part length is too small".to_owned());
         }
 
-        let compress_magic = if let Some(compression) = compression_type {
-            Some(match compression.as_str() {
-                COMPRESS_TYPE_DEFLATE => COMPRESS_MAGIC_DEFLATE.to_owned(),
-                _ => { return Err("Unrecognized compression type".to_owned()); }
-            })
-        } else { None };
-
         Ok(Self {
             version: 1,
             name,
             namespace,
             max_part_len,
-            compression_type: compress_magic,
+            compression_type,
             media_types_path,
         })
     }
@@ -397,14 +390,10 @@ fn write_package_to_disk(
     // version
     push_u16_le(&mut header_buf, options.version);
     // compression type
-    let compression_type_buf = match options.compression_type.as_ref() {
-        Some(compression_type) => {
-            assert!(compression_type.is_ascii());
-            &compression_type.as_bytes()[0..PACK_HEADER_COMPRESSION_LEN]
-        }
-        None => &[0u8; 2],
-    };
-    header_buf.extend_from_slice(compression_type_buf);
+    let compress_magic = options.compression_type.as_ref()
+        .map(|c| c.get_magic())
+        .unwrap_or(&[0u8; 2]);
+    header_buf.extend_from_slice(compress_magic);
     // namespace
     let mut namespace_buf = Vec::with_capacity(PACK_HEADER_NAMESPACE_LEN);
     namespace_buf.extend_from_slice(options.namespace.as_bytes());
@@ -471,10 +460,9 @@ fn load_node_data(node: &FsNode, options: &PackingOptions)
         file.read_to_end(&mut data).map_err(|e| e.to_string())?;
 
         if let Some(compression) = options.compression_type.as_ref() {
-            match compression.as_str() {
-                COMPRESS_MAGIC_DEFLATE =>
+            match compression {
+                CompressionType::Deflate =>
                     deflate::compress_to_vec_zlib(&data, CompressionLevel::NoCompression as u8),
-                _ => panic!("Unhandled compression type {}", compression),
             }
         } else {
             data

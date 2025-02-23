@@ -1,7 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use arp::{create_arp_from_fs, PackingOptions, COMPRESS_TYPE_DEFLATE};
+use arp::{create_arp_from_fs, CompressionType, PackingOptions};
 
 pub fn main() {
     let args = Cli::parse();
@@ -19,11 +19,11 @@ fn do_pack(args: PackArgs) {
     let namespace = args.namespace.unwrap_or_else(|| name.clone());
     let max_part_len = args.part_size;
     let compression_type = if args.deflate {
-        Some(COMPRESS_TYPE_DEFLATE)
+        Some(CompressionType::Deflate)
     } else {
         match args.compression_type {
-            Some(CompressionType::None) | None => None,
-            Some(CompressionType::Deflate) => Some(COMPRESS_TYPE_DEFLATE),
+            Some(CompressionTypeArg::None) | None => None,
+            Some(CompressionTypeArg::Deflate) => Some(CompressionType::Deflate),
         }
     };
     let media_types_path = args.mappings;
@@ -66,7 +66,7 @@ struct PackArgs {
     #[arg(value_name = "directory")]
     source_path: PathBuf,
     #[arg(short = 'c', long = "compress", value_name = "type", default_value = None)]
-    compression_type: Option<CompressionType>,
+    compression_type: Option<CompressionTypeArg>,
     #[arg(long = "deflate")]
     deflate: bool,
     #[arg(short = 'f', long = "name", value_name = "name")]
@@ -96,7 +96,7 @@ struct ListArgs {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-enum CompressionType {
+enum CompressionTypeArg {
     None,
     Deflate,
 }
