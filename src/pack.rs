@@ -11,6 +11,7 @@ use crate::util::crc32c::crc32c;
 use crate::util::uid::validate_path_component;
 
 pub use crate::defines::COMPRESS_MAGIC_DEFLATE;
+use crate::mappings::load_builtin_media_types;
 
 pub const DEFAULT_MEDIA_TYPE: &str = "application/octet-stream";
 
@@ -75,13 +76,21 @@ pub fn create_arp_from_fs(
     target_dir: impl AsRef<Path>,
     options: PackingOptions,
 ) -> Result<(), String> {
-    let media_types = if let Some(mt_path) = &options.media_types_path {
-        load_media_types(mt_path)?
+    let media_types_builtin = load_builtin_media_types();
+
+    let mut user_mappings_content = String::new();
+    let media_types_user = if let Some(mt_path) = &options.media_types_path {
+        let mut mt_file = File::open(mt_path).map_err(|e| e.to_string())?;
+        mt_file.read_to_string(&mut user_mappings_content).map_err(|e| e.to_string())?;
+        load_media_types(user_mappings_content.as_str())?
     } else {
         Default::default()
     };
+    
+    let mut all_media_types = media_types_builtin;
+    all_media_types.extend(media_types_user);
 
-    let nodes = traverse_fs(src_path.as_ref(), &media_types)?;
+    let nodes = traverse_fs(src_path.as_ref(), &all_media_types)?;
 
     write_package_to_disk(nodes, target_dir.as_ref(), &options)
 }
@@ -105,7 +114,7 @@ struct ProcessedNodeData {
 
 fn traverse_fs(
     root_path: impl AsRef<Path>,
-    suppl_media_types: &HashMap<String, String>
+    media_types: &HashMap<&str, &str>
 ) -> Result<Vec<FsNode>, String> {
 
     let mut dir_queue: VecDeque<PathBuf> = VecDeque::from([root_path.as_ref().to_owned()]);
@@ -130,7 +139,7 @@ fn traverse_fs(
         let media_type = if meta.is_file() {
             dir_path.extension()
                 .and_then(|ext|
-                    suppl_media_types.get(ext.to_string_lossy().as_ref()).map(|s| s.as_str())
+                    media_types.get(ext.to_string_lossy().as_ref()).copied()
                 )
                 .unwrap_or(DEFAULT_MEDIA_TYPE)
         } else {
@@ -188,7 +197,7 @@ fn traverse_fs(
 
         let media_type = file_path.extension()
             .and_then(|ext|
-                suppl_media_types.get(ext.to_string_lossy().as_ref()).map(|s| s.as_str())
+                media_types.get(ext.to_string_lossy().as_ref()).copied()
             )
             .unwrap_or(DEFAULT_MEDIA_TYPE);
 
@@ -226,17 +235,13 @@ fn traverse_fs(
     Ok(final_nodes)
 }
 
-fn load_media_types(path: impl AsRef<Path>) -> Result<HashMap<String, String>, String> {
-    let mut mt_file = File::open(path).map_err(|e| e.to_string())?;
-    let mut csv_contents = String::new();
-    mt_file.read_to_string(&mut csv_contents).map_err(|e| e.to_string())?;
-
+fn load_media_types(csv_contents: &str) -> Result<HashMap<&str, &str>, String> {
     let mappings = csv_contents.lines()
         .filter_map(|line| {
             let spl = line.split_once(",")?;
-            Some((spl.0.to_owned(), spl.1.to_owned()))
+            Some((spl.0, spl.1))
         })
-        .collect::<HashMap<String, String>>();
+        .collect::<HashMap<&str, &str>>();
 
     Ok(mappings)
 }
