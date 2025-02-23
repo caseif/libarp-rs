@@ -4,8 +4,8 @@
 pub(crate) const FORMAT_MAGIC: [u8; 8] = [0x1B, 0x41, 0x52, 0x47, 0x55, 0x53, 0x52, 0x50];
 pub(crate) const PART_MAGIC: [u8; 8] = [0x1B, 0x41, 0x52, 0x47, 0x55, 0x53, 0x50, 0x54];
 
-pub(crate) const COMPRESS_TYPE_DEFLATE: &str = "deflate";
-pub const COMPRESS_MAGIC_DEFLATE: &str = "df";
+pub const COMPRESS_TYPE_DEFLATE: &str = "deflate";
+pub(crate) const COMPRESS_MAGIC_DEFLATE: &str = "df";
 
 pub(crate) const PACKAGE_PART_1_SUFFIX: &str = ".part001";
 

@@ -1,7 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use arp::{create_arp_from_fs, PackingOptions};
+use arp::{create_arp_from_fs, PackingOptions, COMPRESS_TYPE_DEFLATE};
 
 pub fn main() {
     let args = Cli::parse();
@@ -18,9 +18,13 @@ fn do_pack(args: PackArgs) {
     let name = args.name.unwrap_or(src_path.file_name().unwrap().to_string_lossy().to_string());
     let namespace = args.namespace.unwrap_or_else(|| name.clone());
     let max_part_len = args.part_size;
-    let compression_type = match args.compression_type {
-        Some(CompressionType::None) | None => None,
-        Some(CompressionType::Deflate) => Some("df"),
+    let compression_type = if args.deflate {
+        Some(COMPRESS_TYPE_DEFLATE)
+    } else {
+        match args.compression_type {
+            Some(CompressionType::None) | None => None,
+            Some(CompressionType::Deflate) => Some(COMPRESS_TYPE_DEFLATE),
+        }
     };
     let media_types_path = args.mappings;
     let dest_path = args.output_dir.unwrap_or(env::current_dir().unwrap());

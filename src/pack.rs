@@ -10,7 +10,7 @@ use crate::defines::*;
 use crate::util::crc32c::crc32c;
 use crate::util::uid::validate_path_component;
 
-pub use crate::defines::COMPRESS_MAGIC_DEFLATE;
+pub use crate::defines::COMPRESS_TYPE_DEFLATE;
 use crate::mappings::load_builtin_media_types;
 
 pub const DEFAULT_MEDIA_TYPE: &str = "application/octet-stream";
@@ -55,7 +55,7 @@ impl PackingOptions {
 
         let compress_magic = if let Some(compression) = compression_type {
             Some(match compression.as_str() {
-                COMPRESS_MAGIC_DEFLATE => COMPRESS_TYPE_DEFLATE.to_owned(),
+                COMPRESS_TYPE_DEFLATE => COMPRESS_MAGIC_DEFLATE.to_owned(),
                 _ => { return Err("Unrecognized compression type".to_owned()); }
             })
         } else { None };
@@ -472,7 +472,7 @@ fn load_node_data(node: &FsNode, options: &PackingOptions)
 
         if let Some(compression) = options.compression_type.as_ref() {
             match compression.as_str() {
-                COMPRESS_TYPE_DEFLATE =>
+                COMPRESS_MAGIC_DEFLATE =>
                     deflate::compress_to_vec(&data, CompressionLevel::BestCompression as u8),
                 _ => panic!("Unhandled compression type {}", compression),
             }
