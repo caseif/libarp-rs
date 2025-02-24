@@ -1,7 +1,10 @@
 use std::env;
 use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use arp::{create_arp_from_fs, CompressionType, PackingOptions};
+use arp::{create_arp_from_fs, get_all_package_resources, CompressionType, Package, PackingOptions};
+
+const LIST_HEADER_TYPE: &str = "TYPE";
+const LIST_HEADER_UID: &str = "IDENTIFIER";
 
 pub fn main() {
     let args = Cli::parse();
@@ -43,8 +46,39 @@ fn do_unpack(_args: UnpackArgs) {
     todo!()
 }
 
-fn do_list(_args: ListArgs) {
-    todo!()
+fn do_list(args: ListArgs) {
+    let package = match Package::load_from_file(args.source_path) {
+        Ok(package) => package,
+        Err(err) => {
+            eprintln!("Unable to load package at given path: {}", err);
+            return;
+        }
+    };
+    let resources = get_all_package_resources(&package);
+    let max_type_len = resources.iter().map(|r| r.media_type.chars().count())
+        .max().unwrap()
+        .max(LIST_HEADER_TYPE.chars().count());
+    let max_uid_len = resources.iter().map(|r| r.identifier.to_string().chars().count())
+        .max().unwrap()
+        .max(LIST_HEADER_UID.chars().count());
+
+    println!(
+        "{: <type_width$}   {: <uid_width$}",
+        LIST_HEADER_TYPE,
+        LIST_HEADER_UID,
+        type_width = max_type_len,
+        uid_width = max_uid_len,
+    );
+    println!("{}", "-".repeat(max_type_len + max_uid_len + 3));
+    for res in resources {
+        println!(
+            "{: <type_width$}   {: <uid_width$}",
+            &res.media_type,
+            res.identifier.to_string(),
+            type_width = max_type_len,
+            uid_width = max_uid_len,
+        );
+    }
 }
 
 #[derive(Parser)]
@@ -93,6 +127,8 @@ struct UnpackArgs {
 
 #[derive(Args)]
 struct ListArgs {
+    #[arg(value_name = "ARP file")]
+    source_path: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
