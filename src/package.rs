@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::{Cursor, Read, Seek};
 use std::path::Path;
 use std::rc::Rc;
@@ -6,16 +8,18 @@ use crate::defines::*;
 use crate::{CompressionType, ResourceDescriptor, ResourceIdentifier, DEFAULT_MEDIA_TYPE};
 
 pub struct Package {
-    namespace: String,
-    catalogue: LoadedCatalogue,
+    pub(crate) meta: PackageMeta,
+    pub(crate) catalogue: LoadedCatalogue,
+    pub(crate) part_files: Option<RefCell<Vec<File>>>,
+    pub(crate) mem_buffer: Option<&'static [u8]>,
 }
 
-struct LoadedCatalogue {
-    dirs: HashMap<u32, DirectoryNode>,
-    resources: HashMap<u32, ResourceNode>,
+pub(crate) struct LoadedCatalogue {
+    pub(crate) dirs: HashMap<u32, DirectoryNode>,
+    pub(crate) resources: HashMap<u32, ResourceNode>,
 }
 
-struct DirectoryNode {
+pub(crate) struct DirectoryNode {
     index: u32,
     name: String,
     data_off: u64,
@@ -23,46 +27,95 @@ struct DirectoryNode {
     children: HashMap<String, u32>,
 }
 
-struct ResourceNode {
-    index: u32,
-    name: String,
-    ext: String,
-    media_type: String,
-    data_part: u16,
-    data_off: u64,
-    data_len_packed: u64,
-    data_len_unpacked: u64,
-    crc: u32,
+pub(crate) struct ResourceNode {
+    pub(crate) index: u32,
+    pub(crate) name: String,
+    pub(crate) ext: String,
+    pub(crate) media_type: String,
+    pub(crate) data_part: u16,
+    pub(crate) data_off: u64,
+    pub(crate) data_len_packed: u64,
+    pub(crate) data_len_unpacked: u64,
+    pub(crate) crc: u32,
 }
 
-struct PackageMeta {
-    major_version: u16,
-    compression_type: Option<CompressionType>,
-    namespace: String,
-    total_parts: u16,
-    cat_off: u64,
-    cat_len: u64,
-    node_count: u32,
-    directory_count: u32,
-    resource_count: u32,
-    body_off: u64,
-    body_len: u64,
+pub(crate) struct PackageMeta {
+    pub(crate) major_version: u16,
+    pub(crate) compression_type: Option<CompressionType>,
+    pub(crate) namespace: String,
+    pub(crate) total_parts: u16,
+    pub(crate) cat_off: u64,
+    pub(crate) cat_len: u64,
+    pub(crate) node_count: u32,
+    pub(crate) directory_count: u32,
+    pub(crate) resource_count: u32,
+    pub(crate) body_off: u64,
+    pub(crate) body_len: u64,
 }
 
 impl Package {
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Rc<Self>, String> {
-        let mut file = std::fs::File::open(path.as_ref()).map_err(|e| e.to_string())?;
-        load_from(&mut file, false).map_err(|e| e.to_string())
+        let path_ref = path.as_ref();
+
+        if !path_ref.is_file() {
+            return Err("Path is not a file".to_owned());
+        }
+
+        let mut main_file = File::open(path_ref).map_err(|e| e.to_string())?;
+
+        let package_meta = load_header_from(&mut main_file).map_err(|e| e.to_string())?;
+
+        validate_package_meta(&package_meta).map_err(|e| e.to_string())?;
+
+        let catalogue = load_catalogue_from(&mut main_file, &package_meta).map_err(|e| e.to_string())?;
+
+        let mut part_files = Vec::with_capacity(package_meta.total_parts as usize);
+        part_files.push(main_file);
+        for i in 1..package_meta.total_parts {
+            let part_file_name = format!(
+                "{:?}.part{:0>3}{:?}",
+                path_ref.file_stem().unwrap(),
+                i + 1,
+                path_ref.extension().unwrap(),
+            );
+            let part_file_path = path_ref.with_file_name(&part_file_name);
+            if !part_file_path.is_file() {
+                return Err(format!("Part file '{}' not found for package", part_file_name));
+            }
+            let part_file = File::open(part_file_path).map_err(|e| e.to_string())?;
+            part_files.push(part_file);
+        }
+
+        Ok(Rc::new(Package {
+            meta: package_meta,
+            catalogue,
+            part_files: Some(RefCell::new(part_files)),
+            mem_buffer: None,
+        }))
     }
 
-    pub fn load_from_memory(data: &[u8]) -> Result<Rc<Self>, String> {
+    pub fn load_from_memory(data: &'static [u8]) -> Result<Rc<Self>, String> {
         let mut cursor = Cursor::new(data);
-        load_from(&mut cursor, true).map_err(|e| e.to_string())
+        let package_meta = load_header_from(&mut cursor).map_err(|e| e.to_string())?;
+
+        if package_meta.total_parts > 0 {
+            return Err("In-memory packages cannot contain multiple parts".to_owned());
+        }
+        validate_package_meta(&package_meta).map_err(|e| e.to_string())?;
+
+        let catalogue = load_catalogue_from(&mut cursor, &package_meta).map_err(|e| e.to_string())?;
+
+        Ok(Rc::new(Package {
+            meta: package_meta,
+            catalogue,
+            part_files: None,
+            mem_buffer: Some(data),
+        }))
     }
 
     pub fn find_resource(self: &Rc<Self>, uid: &ResourceIdentifier)
                          -> Result<ResourceDescriptor, String> {
-        if self.namespace != uid.namespace {
+        if self.meta.namespace != uid.namespace {
             return Err("Namespace does not match".to_owned());
         }
 
@@ -91,6 +144,7 @@ impl Package {
         Ok(ResourceDescriptor {
             package: Rc::clone(self),
             identifier: uid.clone(),
+            name: resource_node.name.clone(),
             extension: resource_node.ext.clone(),
             media_type: resource_node.media_type.clone(),
             size: resource_node.data_len_unpacked,
@@ -104,7 +158,7 @@ impl Package {
 
         let root_dir = self.catalogue.dirs.get(&0)
             .expect("Failed to get root directory for package");
-        dir_queue.push((root_dir, ResourceIdentifier::new(self.namespace.clone(), vec![])));
+        dir_queue.push((root_dir, ResourceIdentifier::new(self.meta.namespace.clone(), vec![])));
         while let Some((cur_dir, cur_uid)) = dir_queue.pop() {
             for (child_name, child_index) in &cur_dir.children {
                 let child_uid = ResourceIdentifier::new(
@@ -121,6 +175,7 @@ impl Package {
                     resources.push(ResourceDescriptor {
                         package: Rc::clone(self),
                         identifier: child_uid,
+                        name: child_res.name.clone(),
                         extension: child_res.ext.clone(),
                         media_type: child_res.media_type.clone(),
                         size: child_res.data_len_unpacked,
@@ -136,19 +191,15 @@ impl Package {
     }
 }
 
-fn load_from<R: Read + Seek>(reader: &mut R, is_in_memory: bool) -> Result<Rc<Package>, String> {
+fn load_header_from<R: Read + Seek>(reader: &mut R) -> Result<PackageMeta, String> {
     let mut header_buf = [0u8; PACKAGE_HEADER_LEN as usize];
     reader.read_exact(&mut header_buf).map_err(|e| e.to_string())?;
     let package_meta = parse_header(&header_buf).map_err(|e| e.to_string())?;
+    Ok(package_meta)
+}
 
-    if package_meta.major_version != 1 {
-        return Err("Unsupported format version".to_owned());
-    }
-    if is_in_memory && package_meta.total_parts > 0 {
-        return Err("In-memory packages cannot contain multiple parts".to_owned());
-    } 
-    //TODO: validate header
-
+fn load_catalogue_from<R: Read + Seek>(reader: &mut R, package_meta: &PackageMeta)
+    -> Result<LoadedCatalogue, String> {
     let mut catalogue_buf = Vec::with_capacity(package_meta.cat_len as usize);
     catalogue_buf.resize(package_meta.cat_len as usize, 0u8);
     reader.seek(std::io::SeekFrom::Start(package_meta.cat_off)).map_err(|e| e.to_string())?;
@@ -191,10 +242,7 @@ fn load_from<R: Read + Seek>(reader: &mut R, is_in_memory: bool) -> Result<Rc<Pa
         }
     }
 
-    Ok(Rc::new(Package {
-        namespace: package_meta.namespace.trim().to_string(),
-        catalogue,
-    }))
+    Ok(catalogue)
 }
 
 fn parse_header(header: &[u8]) -> Result<PackageMeta, String> {
@@ -323,6 +371,18 @@ fn parse_catalogue(buf: &[u8], node_count: u32, dir_count: u32, resource_count: 
         dirs: dir_nodes,
         resources: res_nodes,
     })
+}
+
+fn validate_package_meta(package_meta: &PackageMeta) -> Result<(), String> {
+    if package_meta.major_version != 1 {
+        return Err("Unsupported format version".to_owned());
+    }
+
+    if package_meta.total_parts > PARTS_MAX {
+        return Err("Package contains too many parts".to_owned());
+    }
+
+    Ok(())
 }
 
 fn read_u16_le(buf: &[u8], off: usize) -> u16 {
