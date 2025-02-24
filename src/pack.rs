@@ -496,11 +496,11 @@ fn compute_node_desc_len(node: &FsNode) -> u16 {
         .unwrap_or(0);
     let media_type_len = node.media_type.len();
 
-    (NODE_DESC_BASE_LEN + (stem_len + ext_len + media_type_len) as u64) as u16
+    (NODE_DESC_BASE_LEN + stem_len + ext_len + media_type_len) as u16
 }
 
 fn compute_catalogue_len(nodes: &Vec<FsNode>) -> u64 {
-    let catalogue_base_len: u64 = nodes.len() as u64 * NODE_DESC_BASE_LEN;
+    let catalogue_base_len: u64 = (nodes.len() * NODE_DESC_BASE_LEN) as u64;
     let mut catalogue_len: u64 = catalogue_base_len;
 
     for node in nodes {
