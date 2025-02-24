@@ -1,7 +1,9 @@
 use std::env;
+use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use arp::{create_arp_from_fs, CompressionType, Package, PackingOptions};
+use arp::{create_arp_from_fs, CompressionType, Package, PackingOptions, ResourceIdentifier};
 
 const LIST_HEADER_TYPE: &str = "TYPE";
 const LIST_HEADER_UID: &str = "IDENTIFIER";
@@ -42,8 +44,58 @@ fn do_pack(args: PackArgs) {
     create_arp_from_fs(&src_path, &dest_path, opts).unwrap();
 }
 
-fn do_unpack(_args: UnpackArgs) {
-    todo!()
+fn do_unpack(args: UnpackArgs) {
+    let Some(res_path) = args.resource_path else {
+        eprintln!("Resource path is required for now");
+        return;
+    };
+
+    let package = match Package::load_from_file(args.source_path) {
+        Ok(package) => package,
+        Err(err) => {
+            eprintln!("Unable to load package at given path: {}", err);
+            return;
+        }
+    };
+    let Ok(res_uid) = ResourceIdentifier::parse(&res_path) else {
+        eprintln!("Unable to parse resource UID");
+        return;
+    };
+    let desc = match package.find_resource(&res_uid) {
+        Ok(desc) => desc,
+        Err(e) => {
+            eprintln!("Resource not found: {}", e);
+            return;
+        },
+    };
+
+    let loaded_data = match desc.load() {
+        Ok(desc) => desc,
+        Err(e) => {
+            eprintln!("Resource not found: {}", e);
+            return;
+        },
+    };
+
+    let file_name = if desc.extension.len() > 0 {
+        format!("{}.{}", desc.name, desc.extension)
+    } else {
+        desc.name.clone()
+    };
+    let out_path = match args.output {
+        Some(output) => {
+            if output.is_dir() {
+                output.join(file_name)
+            } else {
+                output
+            }
+        }
+        None => env::current_dir().unwrap().join(file_name),
+    };
+    let mut file = File::create(&out_path).expect("Failed to open output file");
+    file.write(&loaded_data).expect("Failed to write to output file");
+    
+    println!("Wrote resource {} to {}", desc.identifier, out_path.display());
 }
 
 fn do_list(args: ListArgs) {
