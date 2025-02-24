@@ -31,7 +31,7 @@ jobs:
           submodules: recursive
 
       - name: Build
-        run: cargo build --profile ${{ matrix.profile }}
+        run: cargo build --profile ${{ matrix.profile }} --features arptool
 
       - name: Archive
         uses: actions/upload-artifact@v4

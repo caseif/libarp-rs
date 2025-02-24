@@ -8,7 +8,7 @@ name = "arp"
 crate-type = ["rlib"]
 
 [features]
-default = ["arptool"]
+default = []
 arptool = ["clap"]
 
 [[bin]]
