@@ -1,7 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use arp::{create_arp_from_fs, get_all_package_resources, CompressionType, Package, PackingOptions};
+use arp::{create_arp_from_fs, CompressionType, Package, PackingOptions};
 
 const LIST_HEADER_TYPE: &str = "TYPE";
 const LIST_HEADER_UID: &str = "IDENTIFIER";
@@ -54,7 +54,7 @@ fn do_list(args: ListArgs) {
             return;
         }
     };
-    let resources = get_all_package_resources(&package);
+    let resources = package.get_all_resource_descriptors();
     let max_type_len = resources.iter().map(|r| r.media_type.chars().count())
         .max().unwrap()
         .max(LIST_HEADER_TYPE.chars().count());

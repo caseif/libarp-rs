@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek};
 use std::path::Path;
-use std::sync::Arc;
+use std::rc::Rc;
 use crate::defines::*;
 use crate::{CompressionType, ResourceDescriptor, ResourceIdentifier, DEFAULT_MEDIA_TYPE};
 
@@ -50,93 +50,93 @@ struct PackageMeta {
 }
 
 impl Package {
-    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Arc<Self>, String> {
+    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Rc<Self>, String> {
         let mut file = std::fs::File::open(path.as_ref()).map_err(|e| e.to_string())?;
         load_from(&mut file, false).map_err(|e| e.to_string())
     }
 
-    pub fn load_from_memory(data: &[u8]) -> Result<Arc<Self>, String> {
+    pub fn load_from_memory(data: &[u8]) -> Result<Rc<Self>, String> {
         let mut cursor = Cursor::new(data);
         load_from(&mut cursor, true).map_err(|e| e.to_string())
     }
-}
 
-pub fn find_resource(package: &Arc<Package>, uid: &ResourceIdentifier)
-    -> Result<ResourceDescriptor, String> {
-    if package.namespace != uid.namespace {
-        return Err("Namespace does not match".to_owned());
-    }
+    pub fn find_resource(self: &Rc<Self>, uid: &ResourceIdentifier)
+                         -> Result<ResourceDescriptor, String> {
+        if self.namespace != uid.namespace {
+            return Err("Namespace does not match".to_owned());
+        }
 
-    let mut cur_dir = package.catalogue.dirs.get(&0)
-        .expect("Failed to get root directory of package"); // root node
-    for component in &uid.components[0..(uid.components.len() - 1)] {
-        let Some(&child_index) = cur_dir.children.get(component) else {
+        let mut cur_dir = self.catalogue.dirs.get(&0)
+            .expect("Failed to get root directory of package"); // root node
+        for component in &uid.components[0..(uid.components.len() - 1)] {
+            let Some(&child_index) = cur_dir.children.get(component) else {
+                return Err("No resource exists with the given identifier".to_owned());
+            };
+
+            let Some(next_dir) = self.catalogue.dirs.get(&child_index) else {
+                return Err("No resource exists with the given identifier".to_owned());
+            };
+
+            cur_dir = next_dir;
+        }
+
+        let resource_node_name = uid.components[uid.components.len() - 1].as_str();
+        let Some(&resource_node_index) = cur_dir.children.get(resource_node_name) else {
+            return Err("No resource exists with the given identifier".to_owned());
+        };
+        let Some(resource_node) = self.catalogue.resources.get(&resource_node_index) else {
             return Err("No resource exists with the given identifier".to_owned());
         };
 
-        let Some(next_dir) = package.catalogue.dirs.get(&child_index) else {
-            return Err("No resource exists with the given identifier".to_owned());
-        };
-
-        cur_dir = next_dir;
+        Ok(ResourceDescriptor {
+            package: Rc::clone(self),
+            identifier: uid.clone(),
+            extension: resource_node.ext.clone(),
+            media_type: resource_node.media_type.clone(),
+            size: resource_node.data_len_unpacked,
+            index: resource_node_index,
+        })
     }
 
-    let resource_node_name = uid.components[uid.components.len() - 1].as_str();
-    let Some(&resource_node_index) = cur_dir.children.get(resource_node_name) else {
-        return Err("No resource exists with the given identifier".to_owned());
-    };
-    let Some(resource_node) = package.catalogue.resources.get(&resource_node_index) else {
-        return Err("No resource exists with the given identifier".to_owned());
-    };
+    pub fn get_all_resource_descriptors(self: &Rc<Package>) -> Vec<ResourceDescriptor> {
+        let mut dir_queue = Vec::new();
+        let mut resources = Vec::new();
 
-    Ok(ResourceDescriptor {
-        package: package.clone(),
-        identifier: uid.clone(),
-        extension: resource_node.ext.clone(),
-        media_type: resource_node.media_type.clone(),
-        size: resource_node.data_len_unpacked,
-        index: resource_node_index,
-    })
-}
-
-pub fn get_all_package_resources(package: &Arc<Package>) -> Vec<ResourceDescriptor> {
-    let mut dir_queue = Vec::new();
-    let mut resources = Vec::new();
-
-    let root_dir = package.catalogue.dirs.get(&0)
-        .expect("Failed to get root directory for package");
-    dir_queue.push((root_dir, ResourceIdentifier::new(package.namespace.clone(), vec![])));
-    while let Some((cur_dir, cur_uid)) = dir_queue.pop() {
-        for (child_name, child_index) in &cur_dir.children {
-            let child_uid = ResourceIdentifier::new(
-                cur_uid.namespace.clone(),
-                {
-                    let mut c = cur_uid.components.clone();
-                    c.push(child_name.clone());
-                    c
-                },
-            );
-            if let Some(child_dir) = package.catalogue.dirs.get(&child_index) {
-                dir_queue.push((child_dir, child_uid));
-            } else if let Some(child_res) = package.catalogue.resources.get(&child_index) {
-                resources.push(ResourceDescriptor {
-                    package: package.clone(),
-                    identifier: child_uid,
-                    extension: child_res.ext.clone(),
-                    media_type: child_res.media_type.clone(),
-                    size: child_res.data_len_unpacked,
-                    index: *child_index,
-                });
-            } else {
-                //TODO: shouldn't happen
+        let root_dir = self.catalogue.dirs.get(&0)
+            .expect("Failed to get root directory for package");
+        dir_queue.push((root_dir, ResourceIdentifier::new(self.namespace.clone(), vec![])));
+        while let Some((cur_dir, cur_uid)) = dir_queue.pop() {
+            for (child_name, child_index) in &cur_dir.children {
+                let child_uid = ResourceIdentifier::new(
+                    cur_uid.namespace.clone(),
+                    {
+                        let mut c = cur_uid.components.clone();
+                        c.push(child_name.clone());
+                        c
+                    },
+                );
+                if let Some(child_dir) = self.catalogue.dirs.get(&child_index) {
+                    dir_queue.push((child_dir, child_uid));
+                } else if let Some(child_res) = self.catalogue.resources.get(&child_index) {
+                    resources.push(ResourceDescriptor {
+                        package: Rc::clone(self),
+                        identifier: child_uid,
+                        extension: child_res.ext.clone(),
+                        media_type: child_res.media_type.clone(),
+                        size: child_res.data_len_unpacked,
+                        index: *child_index,
+                    });
+                } else {
+                    //TODO: shouldn't happen
+                }
             }
         }
-    }
 
-    resources
+        resources
+    }
 }
 
-fn load_from<R: Read + Seek>(reader: &mut R, is_in_memory: bool) -> Result<Arc<Package>, String> {
+fn load_from<R: Read + Seek>(reader: &mut R, is_in_memory: bool) -> Result<Rc<Package>, String> {
     let mut header_buf = [0u8; PACKAGE_HEADER_LEN as usize];
     reader.read_exact(&mut header_buf).map_err(|e| e.to_string())?;
     let package_meta = parse_header(&header_buf).map_err(|e| e.to_string())?;
@@ -191,7 +191,7 @@ fn load_from<R: Read + Seek>(reader: &mut R, is_in_memory: bool) -> Result<Arc<P
         }
     }
 
-    Ok(Arc::new(Package {
+    Ok(Rc::new(Package {
         namespace: package_meta.namespace.trim().to_string(),
         catalogue,
     }))

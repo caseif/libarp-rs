@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use std::sync::Arc;
+use std::rc::Rc;
 use crate::defines::{UID_NAMESPACE_SEPARATOR, UID_PATH_SEPARATOR};
 use crate::Package;
 
@@ -16,7 +16,7 @@ impl Resource {
 
 #[derive(Clone)]
 pub struct ResourceDescriptor {
-    pub package: Arc<Package>,
+    pub package: Rc<Package>,
     pub identifier: ResourceIdentifier,
     pub extension: String,
     pub media_type: String,
