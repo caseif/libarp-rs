@@ -129,6 +129,24 @@ impl ResourceIdentifier {
         Ok(Self { namespace: ns.to_owned(), components: path_cmpts })
     }
 
+    pub fn join(&self, component: impl AsRef<str>) -> Result<Self, String> {
+        let component_ref = component.as_ref();
+        if component_ref.contains(UID_NAMESPACE_SEPARATOR) ||
+            component_ref.contains(UID_PATH_SEPARATOR) {
+            return Err(
+                "Resouce UID component may not contain namespace or path separator".to_owned()
+            );
+        }
+
+        let mut new_cmpts = Vec::with_capacity(self.components.len() + 1);
+        new_cmpts.clone_from(&self.components);
+        new_cmpts.push(component_ref.to_owned());
+        Ok(Self {
+            namespace: self.namespace.clone(),
+            components: new_cmpts,
+        })
+    }
+
     pub fn to_string(&self) -> String {
         format!(
             "{}{}{}",
