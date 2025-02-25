@@ -7,6 +7,7 @@ mod set;
 mod types;
 mod util;
 
+pub use mappings::*;
 pub use pack::*;
 pub use package::*;
 pub use resource::*;

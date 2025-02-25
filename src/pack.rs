@@ -12,7 +12,7 @@ use crate::util::crc32c::crc32c;
 use crate::util::uid::validate_path_component;
 
 pub use crate::defines::COMPRESS_TYPE_DEFLATE;
-use crate::mappings::load_builtin_media_types;
+use crate::mappings::load_arp_builtin_media_types;
 
 pub const DEFAULT_MEDIA_TYPE: &str = "application/octet-stream";
 
@@ -69,7 +69,7 @@ pub fn create_arp_from_fs(
     target_dir: impl AsRef<Path>,
     options: PackingOptions,
 ) -> Result<(), String> {
-    let media_types_builtin = load_builtin_media_types();
+    let media_types_builtin = load_arp_builtin_media_types();
 
     let mut user_mappings_content = String::new();
     let media_types_user = if let Some(mt_path) = &options.media_types_path {

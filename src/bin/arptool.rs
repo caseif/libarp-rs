@@ -94,7 +94,7 @@ fn do_unpack(args: UnpackArgs) {
     };
     let mut file = File::create(&out_path).expect("Failed to open output file");
     file.write(&loaded_data).expect("Failed to write to output file");
-    
+
     println!("Wrote resource {} to {}", desc.identifier, out_path.display());
 }
 
