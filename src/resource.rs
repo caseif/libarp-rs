@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::io::{Read, Seek, SeekFrom};
-use std::rc::Rc;
+use std::sync::Arc;
 use miniz_oxide::inflate::stream::{inflate, InflateState};
 use miniz_oxide::{DataFormat, MZFlush, MZStatus};
 use crate::defines::{PACKAGE_PART_HEADER_LEN, UID_NAMESPACE_SEPARATOR, UID_PATH_SEPARATOR};
@@ -14,7 +14,7 @@ pub struct Resource {
 
 #[derive(Clone)]
 pub struct ResourceDescriptor {
-    pub package: Rc<Package>,
+    pub package: Arc<Package>,
     pub identifier: ResourceIdentifier,
     pub name: String,
     pub extension: String,
@@ -41,7 +41,7 @@ impl ResourceDescriptor {
                 &mem_buffer[(data_off as usize)..((data_off + data_len_packed) as usize)]
             )
         } else if let Some(part_files) = self.package.part_files.as_ref() {
-            let mut part_files_borrowed = part_files.borrow_mut();
+            let mut part_files_borrowed = part_files.write().unwrap();
             let part_file = &mut part_files_borrowed[resource.data_part as usize - 1];
 
             let mut buf = Vec::with_capacity(data_len_packed as usize);
@@ -119,7 +119,9 @@ impl ResourceIdentifier {
             return Err("Resource UID namespace cannot contain path separator".to_owned());
         }
 
-        let path_cmpts = path.split("/").map(|s| s.to_owned()).collect::<Vec<String>>();
+        let path_cmpts = path.split(UID_PATH_SEPARATOR)
+            .map(|s| s.to_owned())
+            .collect::<Vec<String>>();
         if path_cmpts.iter().any(|s| s.is_empty()) {
             return Err("Resource UID contains empty path component".to_owned());
         }

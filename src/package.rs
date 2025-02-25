@@ -1,16 +1,16 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use crate::defines::*;
 use crate::{CompressionType, ResourceDescriptor, ResourceIdentifier, DEFAULT_MEDIA_TYPE};
 
 pub struct Package {
     pub(crate) meta: PackageMeta,
     pub(crate) catalogue: LoadedCatalogue,
-    pub(crate) part_files: Option<RefCell<Vec<File>>>,
+    pub(crate) base_file_name: Option<String>,
+    pub(crate) part_files: Option<Arc<RwLock<Vec<File>>>>,
     pub(crate) mem_buffer: Option<&'static [u8]>,
 }
 
@@ -54,7 +54,7 @@ pub(crate) struct PackageMeta {
 }
 
 impl Package {
-    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Rc<Self>, String> {
+    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Arc<Self>, String> {
         let path_ref = path.as_ref();
 
         if !path_ref.is_file() {
@@ -68,6 +68,16 @@ impl Package {
         validate_package_meta(&package_meta).map_err(|e| e.to_string())?;
 
         let catalogue = load_catalogue_from(&mut main_file, &package_meta).map_err(|e| e.to_string())?;
+
+        let base_file_name = {
+            let stem = path_ref.file_stem().unwrap()
+                .to_str().unwrap();
+            if let Some(stripped_stem) = stem.strip_suffix(PACKAGE_PART_1_SUFFIX) {
+                stripped_stem.to_owned()
+            } else {
+                stem.to_owned()
+            }
+        };
 
         let mut part_files = Vec::with_capacity(package_meta.total_parts as usize);
         part_files.push(main_file);
@@ -85,35 +95,49 @@ impl Package {
             let part_file = File::open(part_file_path).map_err(|e| e.to_string())?;
             part_files.push(part_file);
         }
-
-        Ok(Rc::new(Package {
+        
+        Ok(Arc::new(Package {
             meta: package_meta,
             catalogue,
-            part_files: Some(RefCell::new(part_files)),
+            base_file_name: Some(base_file_name),
+            part_files: Some(Arc::new(RwLock::new(part_files))),
             mem_buffer: None,
         }))
     }
 
-    pub fn load_from_memory(data: &'static [u8]) -> Result<Rc<Self>, String> {
+    pub fn load_from_memory(data: &'static [u8]) -> Result<Arc<Self>, String> {
         let mut cursor = Cursor::new(data);
         let package_meta = load_header_from(&mut cursor).map_err(|e| e.to_string())?;
 
-        if package_meta.total_parts > 0 {
+        if package_meta.total_parts > 1 {
             return Err("In-memory packages cannot contain multiple parts".to_owned());
         }
         validate_package_meta(&package_meta).map_err(|e| e.to_string())?;
 
         let catalogue = load_catalogue_from(&mut cursor, &package_meta).map_err(|e| e.to_string())?;
 
-        Ok(Rc::new(Package {
+        Ok(Arc::new(Package {
             meta: package_meta,
             catalogue,
+            base_file_name: None,
             part_files: None,
             mem_buffer: Some(data),
         }))
     }
 
-    pub fn find_resource(self: &Rc<Self>, uid: &ResourceIdentifier)
+    pub fn get_namespace(&self) -> &str {
+        self.meta.namespace.as_str()
+    }
+
+    pub fn get_base_file_name(&self) -> Option<&str> {
+        self.base_file_name.as_ref().map(|s| s.as_str())
+    }
+
+    pub fn is_in_memory(&self) -> bool {
+        self.mem_buffer.is_some()
+    }
+
+    pub fn find_resource(self: &Arc<Self>, uid: &ResourceIdentifier)
                          -> Result<ResourceDescriptor, String> {
         if self.meta.namespace != uid.namespace {
             return Err("Namespace does not match".to_owned());
@@ -142,7 +166,7 @@ impl Package {
         };
 
         Ok(ResourceDescriptor {
-            package: Rc::clone(self),
+            package: Arc::clone(self),
             identifier: uid.clone(),
             name: resource_node.name.clone(),
             extension: resource_node.ext.clone(),
@@ -152,7 +176,7 @@ impl Package {
         })
     }
 
-    pub fn get_all_resource_descriptors(self: &Rc<Package>) -> Vec<ResourceDescriptor> {
+    pub fn get_all_resource_descriptors(self: &Arc<Package>) -> Vec<ResourceDescriptor> {
         let mut dir_queue = Vec::new();
         let mut resources = Vec::new();
 
@@ -173,7 +197,7 @@ impl Package {
                     dir_queue.push((child_dir, child_uid));
                 } else if let Some(child_res) = self.catalogue.resources.get(&child_index) {
                     resources.push(ResourceDescriptor {
-                        package: Rc::clone(self),
+                        package: Arc::clone(self),
                         identifier: child_uid,
                         name: child_res.name.clone(),
                         extension: child_res.ext.clone(),
