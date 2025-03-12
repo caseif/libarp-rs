@@ -100,8 +100,8 @@ pub struct ResourceIdentifier {
 }
 
 impl ResourceIdentifier {
-    pub fn new(namespace: impl Into<String>, components: Vec<String>) -> Self {
-        Self { namespace: namespace.into(), components, }
+    pub fn new(namespace: impl Into<String>, components: impl Into<Vec<String>>) -> Self {
+        Self { namespace: namespace.into(), components: components.into(), }
     }
 
     pub fn parse(s: impl AsRef<str>) -> Result<Self, String> {

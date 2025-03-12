@@ -39,18 +39,18 @@ pub(crate) struct ResourceNode {
     pub(crate) crc: u32,
 }
 
-pub(crate) struct PackageMeta {
-    pub(crate) major_version: u16,
-    pub(crate) compression_type: Option<CompressionType>,
-    pub(crate) namespace: String,
-    pub(crate) total_parts: u16,
-    pub(crate) cat_off: u64,
-    pub(crate) cat_len: u64,
-    pub(crate) node_count: u32,
-    pub(crate) directory_count: u32,
-    pub(crate) resource_count: u32,
-    pub(crate) body_off: u64,
-    pub(crate) body_len: u64,
+pub struct PackageMeta {
+    pub major_version: u16,
+    pub compression_type: Option<CompressionType>,
+    pub namespace: String,
+    pub total_parts: u16,
+    pub cat_off: u64,
+    pub cat_len: u64,
+    pub node_count: u32,
+    pub directory_count: u32,
+    pub resource_count: u32,
+    pub body_off: u64,
+    pub body_len: u64,
 }
 
 impl Package {
@@ -103,6 +103,36 @@ impl Package {
             part_files: Some(Arc::new(RwLock::new(part_files))),
             mem_buffer: None,
         }))
+    }
+
+    pub fn load_meta_from_file(path: impl AsRef<Path>) -> Result<PackageMeta, String> {
+        let path_ref = path.as_ref();
+
+        if !path_ref.is_file() {
+            return Err("Path is not a file".to_owned());
+        }
+
+        let mut main_file = File::open(path_ref).map_err(|e| e.to_string())?;
+
+        let package_meta = load_header_from(&mut main_file).map_err(|e| e.to_string())?;
+
+        validate_package_meta(&package_meta).map_err(|e| e.to_string())?;
+
+        Ok(package_meta)
+    }
+
+    pub fn is_base_archive(path: impl AsRef<Path>) -> Result<bool, String> {
+        let path_ref = path.as_ref();
+
+        if !path_ref.is_file() {
+            return Err("Path is not a file".to_owned());
+        }
+
+        let mut main_file = File::open(path_ref).map_err(|e| e.to_string())?;
+
+        let magic = load_magic_from(&mut main_file).map_err(|e| e.to_string())?;
+
+        Ok(magic == FORMAT_MAGIC)
     }
 
     pub fn load_from_memory(data: &'static [u8]) -> Result<Arc<Self>, String> {
@@ -220,6 +250,12 @@ fn load_header_from<R: Read + Seek>(reader: &mut R) -> Result<PackageMeta, Strin
     reader.read_exact(&mut header_buf).map_err(|e| e.to_string())?;
     let package_meta = parse_header(&header_buf).map_err(|e| e.to_string())?;
     Ok(package_meta)
+}
+
+fn load_magic_from<R: Read + Seek>(reader: &mut R) -> Result<[u8; PACK_HEADER_MAGIC_LEN], String> {
+    let mut header_buf = [0u8; PACK_HEADER_MAGIC_LEN];
+    reader.read_exact(&mut header_buf).map_err(|e| e.to_string())?;
+    Ok(header_buf)
 }
 
 fn load_catalogue_from<R: Read + Seek>(reader: &mut R, package_meta: &PackageMeta)
